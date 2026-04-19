@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+# crontab-git — version-control wrapper for crontab
+#
+# Treat your crontab like source code: diff, history, atomic apply, rollback.
+# No daemon, no deps beyond git, crontab, and a $EDITOR.
+#
+# Repo:    ~/.config/crontab-git/ (override with CRONTAB_GIT_DIR)
+# File:    crontab (the tracked source of truth)
+
+set -euo pipefail
+
+DIR="${CRONTAB_GIT_DIR:-$HOME/.config/crontab-git}"
+FILE="$DIR/crontab"
+EDITOR="${EDITOR:-${VISUAL:-vi}}"
+
+usage() {
+    cat <<EOF
+crontab-git — version-control wrapper for crontab
+
+Usage:
+  crontab-git init                 Initialize $DIR from current crontab
+  crontab-git edit                 Edit, diff, confirm, apply
+  crontab-git diff                 Show diff (active crontab vs tracked file)
+  crontab-git apply                Apply tracked file to crontab (no edit)
+  crontab-git pull                 Pull active crontab into tracked file (if drifted)
+  crontab-git log [N]              Show last N commits (default 20)
+  crontab-git show <ref>           Show a version
+  crontab-git rollback <ref>       Restore to a previous version (creates commit)
+  crontab-git status               One-line summary
+
+Environment:
+  CRONTAB_GIT_DIR   Override repo directory (default ~/.config/crontab-git)
+  EDITOR, VISUAL    Editor to use (default vi)
+EOF
+}
+
+require_init() {
+    if [[ ! -d "$DIR/.git" ]]; then
+        echo "error: crontab-git not initialized. Run: crontab-git init" >&2
+        exit 1
+    fi
+}
+
+git_in() { git -C "$DIR" "$@"; }
+
+cmd_init() {
+    if [[ -d "$DIR/.git" ]]; then
+        echo "already initialized at $DIR"
+        return 0
+    fi
+    mkdir -p "$DIR"
+    git -C "$DIR" init -q
+    git -C "$DIR" config user.name "${GIT_AUTHOR_NAME:-$(whoami)}"
+    git -C "$DIR" config user.email "${GIT_AUTHOR_EMAIL:-$(whoami)@$(hostname)}"
+    crontab -l 2>/dev/null > "$FILE" || : > "$FILE"
+    git_in add crontab
+    git_in commit -q -m "init: snapshot existing crontab" --allow-empty
+    echo "initialized $DIR ($(wc -l < "$FILE") lines)"
+}
+
+cmd_edit() {
+    require_init
+    cmd_pull_quiet
+    local tmp
+    tmp=$(mktemp --suffix=.crontab)
+    cp "$FILE" "$tmp"
+    "$EDITOR" "$tmp"
+    if cmp -s "$tmp" "$FILE"; then
+        echo "no changes"
+        rm -f "$tmp"
+        return 0
+    fi
+    # Show diff
+    diff -u "$FILE" "$tmp" || :
+    read -r -p "apply these changes? [y/N] " ans
+    case "$ans" in
+        y|Y|yes|YES)
+            mv "$tmp" "$FILE"
+            _apply_and_commit "edit: changes via $EDITOR"
+            ;;
+        *)
+            rm -f "$tmp"
+            echo "aborted"
+            ;;
+    esac
+}
+
+cmd_pull_quiet() {
+    # Silently absorb drift: if active crontab differs from tracked, create a
+    # "drift" commit so we don't lose anything the user did outside our tool.
+    local active
+    active=$(crontab -l 2>/dev/null || true)
+    if ! diff -q <(printf '%s' "$active") "$FILE" >/dev/null 2>&1; then
+        printf '%s' "$active" > "$FILE"
+        git_in add crontab
+        git_in commit -q -m "drift: absorbed out-of-band crontab change" || :
+    fi
+}
+
+cmd_pull() {
+    require_init
+    local before_sha
+    before_sha=$(git_in rev-parse HEAD)
+    cmd_pull_quiet
+    local after_sha
+    after_sha=$(git_in rev-parse HEAD)
+    if [[ "$before_sha" == "$after_sha" ]]; then
+        echo "no drift"
+    else
+        echo "absorbed drift in commit $(git_in rev-parse --short HEAD)"
+    fi
+}
+
+cmd_diff() {
+    require_init
+    diff -u <(crontab -l 2>/dev/null || true) "$FILE" && echo "(no diff)" || :
+}
+
+cmd_apply() {
+    require_init
+    _apply_and_commit "apply: re-install tracked crontab"
+}
+
+_apply_and_commit() {
+    local msg="$1"
+    # Atomic apply: write tempfile, install via crontab
+    local tmp
+    tmp=$(mktemp --suffix=.crontab)
+    cp "$FILE" "$tmp"
+    if ! crontab "$tmp"; then
+        echo "error: crontab install failed; changes not applied" >&2
+        rm -f "$tmp"
+        return 1
+    fi
+    rm -f "$tmp"
+    git_in add crontab
+    if ! git_in diff --cached --quiet; then
+        git_in commit -q -m "$msg"
+        echo "applied + committed $(git_in rev-parse --short HEAD)"
+    else
+        echo "applied (no tracked change)"
+    fi
+}
+
+cmd_log() {
+    require_init
+    local n="${1:-20}"
+    git_in log --oneline -n "$n"
+}
+
+cmd_show() {
+    require_init
+    local ref="${1:-HEAD}"
+    git_in show "$ref:crontab"
+}
+
+cmd_rollback() {
+    require_init
+    local ref="${1:?usage: crontab-git rollback <ref>}"
+    git_in show "$ref:crontab" > "$FILE"
+    _apply_and_commit "rollback: restore crontab from $ref"
+}
+
+cmd_status() {
+    if [[ ! -d "$DIR/.git" ]]; then
+        echo "not initialized (run: crontab-git init)"
+        return 1
+    fi
+    local lines head drift
+    lines=$(wc -l < "$FILE" 2>/dev/null || echo 0)
+    head=$(git_in rev-parse --short HEAD 2>/dev/null || echo "-")
+    if diff -q <(crontab -l 2>/dev/null || true) "$FILE" >/dev/null 2>&1; then
+        drift="in-sync"
+    else
+        drift="DRIFTED (run: crontab-git diff)"
+    fi
+    echo "$DIR @ $head — $lines lines — $drift"
+}
+
+cmd="${1:-status}"
+shift || :
+case "$cmd" in
+    init)     cmd_init ;;
+    edit)     cmd_edit ;;
+    diff)     cmd_diff ;;
+    apply)    cmd_apply ;;
+    pull)     cmd_pull ;;
+    log)      cmd_log "$@" ;;
+    show)     cmd_show "$@" ;;
+    rollback) cmd_rollback "$@" ;;
+    status)   cmd_status ;;
+    -h|--help|help) usage ;;
+    *) echo "unknown: $cmd" >&2; usage; exit 1 ;;
+esac
