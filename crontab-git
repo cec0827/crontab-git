@@ -11,7 +11,7 @@ set -euo pipefail
 
 DIR="${CRONTAB_GIT_DIR:-$HOME/.config/crontab-git}"
 FILE="$DIR/crontab"
-EDITOR="${EDITOR:-${VISUAL:-vi}}"
+EDITOR="${EDITOR:-${VISUAL:-nano}}"
 
 usage() {
     cat <<EOF
