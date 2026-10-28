@@ -11,7 +11,14 @@ curl -o /usr/local/bin/crontab-git https://raw.githubusercontent.com/kithfoss/cr
 chmod +x /usr/local/bin/crontab-git
 ```
 
-Or clone and symlink:
+Or clone and symlink, but first prepare environment...
+
+```bash
+mkdir /home/chuck/.local/bin
+echo 'export PATH="$PATH:/home/chuck/.local/bin"' >> ~/.bashrc
+source ~/.bashrc
+```
+now clone and create the symlink
 
 ```bash
 git clone https://github.com/kithfoss/crontab-git.git ~/.local/src/crontab-git
