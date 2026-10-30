@@ -6,15 +6,20 @@ No daemon. No hooks. No dependencies beyond `git`, `crontab`, and `$EDITOR`.
 
 ## Install
 
+First prepare local environment if needed
+
+direct install:
+
 ```bash
 curl -o /usr/local/bin/crontab-git https://raw.githubusercontent.com/cec0827/crontab-git/main/crontab-git
 chmod +x /usr/local/bin/crontab-git
 ```
 
-Or clone and symlink, but first prepare environment...
+Or clone and symlink, but first prepare environment ...
 
 ```bash
 mkdir /home/chuck/.local/bin
+mkdir /home/chuck/.local/src
 echo 'export PATH="$PATH:/home/chuck/.local/bin"' >> ~/.bashrc
 source ~/.bashrc
 ```
