@@ -26,7 +26,7 @@ source ~/.bashrc
 now clone and create the symlink
 
 ```bash
-git clone https://github.com/kithfoss/crontab-git.git ~/.local/src/crontab-git
+git clone git@github.com:cec0827/crontab-git.git ~/.local/src/crontab-git
 ln -s ~/.local/src/crontab-git/crontab-git ~/.local/bin/
 ```
 
