@@ -7,7 +7,7 @@ No daemon. No hooks. No dependencies beyond `git`, `crontab`, and `$EDITOR`.
 ## Install
 
 ```bash
-curl -o /usr/local/bin/crontab-git https://raw.githubusercontent.com/kithfoss/crontab-git/main/crontab-git
+curl -o /usr/local/bin/crontab-git https://raw.githubusercontent.com/cec0827/crontab-git/main/crontab-git
 chmod +x /usr/local/bin/crontab-git
 ```
 
